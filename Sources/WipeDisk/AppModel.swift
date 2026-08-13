@@ -188,16 +188,24 @@ final class AppModel: ObservableObject {
                 case .success(let disks):
                     self.disks = disks
                     self.listError = nil
-                    if let id = self.selectedDiskID, !disks.contains(where: { $0.id == id }) {
-                        self.selectedDiskID = nil
-                    }
-                    if self.selectedDiskID == nil {
-                        self.selectedDiskID = disks.first(where: \.canWipe)?.id
-                    }
+                    // Secimi listeyle ayni turda degistirmek, kenar cubugunun
+                    // altindaki NSTableView'i yeniden girisli calistiriyor.
+                    // Duzeltmeyi bir sonraki tura birak.
+                    Task { @MainActor in self.reconcileSelection() }
                 case .failure(let error):
                     self.listError = error.localizedDescription
                 }
             }
+        }
+    }
+
+    /// Liste tazelendikten sonra secimi gecerli bir diske sabitler.
+    private func reconcileSelection() {
+        if let id = selectedDiskID, !disks.contains(where: { $0.id == id }) {
+            selectedDiskID = nil
+        }
+        if selectedDiskID == nil {
+            selectedDiskID = disks.first(where: \.canWipe)?.id
         }
     }
 

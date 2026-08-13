@@ -11,6 +11,7 @@
 #   Scripts/make-app.sh --universal     # arm64 + x86_64
 #   Scripts/make-app.sh --debug         # debug yapilandirmasi
 #   Scripts/make-app.sh --open          # bitince Finder'da goster
+#   Scripts/make-app.sh --install     # /Applications altina kur
 
 set -euo pipefail
 
@@ -20,12 +21,14 @@ cd "$ROOT"
 CONFIG="release"
 BUILD_FLAGS=()
 REVEAL=0
+INSTALL=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --universal) BUILD_FLAGS+=(--arch arm64 --arch x86_64) ;;
         --debug)     CONFIG="debug" ;;
         --open)      REVEAL=1 ;;
+        --install)   INSTALL=1 ;;
         -h|--help)   sed -n '2,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *)           echo "Bilinmeyen secenek: $1" >&2; exit 2 ;;
     esac
@@ -95,8 +98,36 @@ codesign --force --sign - "$MACOS_DIR/wipe-helper"
 codesign --force --sign - "$APP"
 
 echo "==> Hazir: $APP"
+
+if [[ $INSTALL -eq 1 ]]; then
+    TARGET="/Applications/WipeDisk.app"
+    echo "==> Kuruluyor: $TARGET"
+
+    # Uzerine yazmadan once calisan ornegi kapat; acik ikili degistirilemez.
+    osascript -e 'tell application "WipeDisk" to quit' 2>/dev/null || true
+    pkill -f "WipeDisk.app/Contents/MacOS/WipeDisk" 2>/dev/null || true
+    sleep 1
+
+    if [[ ! -w /Applications ]]; then
+        echo "Hata: /Applications yazilabilir degil. sudo ile calistirin." >&2
+        exit 1
+    fi
+
+    rm -rf "$TARGET"
+    cp -R "$APP" "$TARGET"
+    codesign --verify --strict "$TARGET" || {
+        echo "Hata: kurulan paketin imzasi dogrulanamadi." >&2
+        exit 1
+    }
+    echo "==> Kuruldu: $TARGET"
+    APP="$TARGET"
+fi
+
 echo "    Calistir:  open '$APP'"
-echo "    Helper:    sudo '$MACOS_DIR/wipe-helper' --list"
+echo "    Helper:    sudo '$APP/Contents/MacOS/wipe-helper' --list"
+echo
+echo "    Not: paket ad-hoc imzali oldugundan her derlemede imza ozeti degisir."
+echo "    Silme islemi icin Tam Disk Erisimi iznini bu kuruluma yeniden verin."
 
 if [[ $REVEAL -eq 1 ]]; then
     open -R "$APP"

@@ -77,11 +77,16 @@ macOS 14+ ve Xcode komut satiri araclari gerekir.
 ```sh
 git clone https://github.com/KULLANICI/WipeDisk.git
 cd WipeDisk
-Scripts/make-app.sh          # build/WipeDisk.app uretir
-open build/WipeDisk.app
+Scripts/make-app.sh --install   # derler ve /Applications altina kurar
+open /Applications/WipeDisk.app
 ```
 
-Secenekler: `--universal` (arm64 + x86_64), `--debug`, `--open`.
+Kurmadan denemek icin `Scripts/make-app.sh` yeterli; paket `build/WipeDisk.app`
+altinda kalir. Diger secenekler: `--universal` (arm64 + x86_64), `--debug`, `--open`.
+
+`--install` calisan ornegi kapatir, `/Applications` altina kopyalar ve kurulan
+paketin imzasini dogrular. `/Applications` yonetici kullanicilar icin yazilabilir
+oldugundan normalde `sudo` gerekmez.
 
 ### Tam Disk Erisimi gerekiyor
 
