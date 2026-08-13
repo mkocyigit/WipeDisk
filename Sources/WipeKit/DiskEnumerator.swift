@@ -271,15 +271,18 @@ public enum ReformatOption: String, CaseIterable, Sendable, Codable {
         }
     }
 
-    var diskutilFilesystem: String? {
+    /// Dosya sistemi adlarinin tek kaynagi `VolumeFormat`; burada yalnizca eslestirilir.
+    public var volumeFormat: VolumeFormat? {
         switch self {
         case .none: return nil
-        case .exfat: return "ExFAT"
-        case .apfs: return "APFS"
-        case .hfsPlus: return "JHFS+"
-        case .fat32: return "MS-DOS FAT32"
+        case .exfat: return .exfat
+        case .apfs: return .apfs
+        case .hfsPlus: return .hfsPlus
+        case .fat32: return .fat32
         }
     }
+
+    var diskutilFilesystem: String? { volumeFormat?.diskutilFilesystem }
 
     var partitionScheme: String {
         switch self {

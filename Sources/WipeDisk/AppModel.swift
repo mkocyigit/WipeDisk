@@ -2,8 +2,18 @@ import Foundation
 import SwiftUI
 import WipeKit
 
-/// Ekranda gorunen silme oturumunun durumu.
+/// Ekranda gorunen ayricalikli islemin durumu.
 struct WipeSession {
+
+    /// Oturumun ne is yaptigi. Bolumleme bayt bazinda ilerleme uretmez,
+    /// bu yuzden panel ona gore sadelesir.
+    enum JobKind: Equatable {
+        case wipe
+        case partition
+        case formatVolume
+
+        var isByteTracked: Bool { self == .wipe }
+    }
 
     enum Phase: Equatable {
         case starting
@@ -22,7 +32,9 @@ struct WipeSession {
     }
 
     let disk: DiskInfo
-    let method: WipeMethod
+    let kind: JobKind
+    /// Baslikta gosterilen is ozeti — "DoD 5220.22-M" veya "GPT · 3 bolum".
+    let subtitle: String
     let startedAt: Date
     let isDryRun: Bool
 
@@ -67,10 +79,18 @@ struct WipeSession {
         switch phase {
         case .starting: return "Hazirlaniyor…"
         case .writing:
+            guard kind.isByteTracked else {
+                return kind == .partition ? "Bolumleniyor…" : "Bicimlendiriliyor…"
+            }
             let label = passLabel.isEmpty ? "" : " · \(passLabel)"
             return "Gecis \(passIndex)/\(passCount)\(label)"
         case .verifying: return "Dogrulaniyor…"
-        case .finished: return isDryRun ? "Deneme tamamlandi" : "Silme tamamlandi"
+        case .finished:
+            switch kind {
+            case .wipe: return isDryRun ? "Deneme tamamlandi" : "Silme tamamlandi"
+            case .partition: return "Bolumleme tamamlandi"
+            case .formatVolume: return "Bicimlendirme tamamlandi"
+            }
         // Cok satirli hatalarda basliga yalnizca ilk satir; ayrintisi gunlukte.
         case .failed(let message): return message.components(separatedBy: "\n").first ?? message
         case .cancelled(let message): return message
@@ -94,10 +114,44 @@ final class AppModel: ObservableObject {
     @Published var reformat: ReformatOption = .none
     @Published var volumeLabel = "WIPED"
 
+    // Bolumleme plani
+    @Published var detailMode: DetailMode = .wipe
+    @Published var scheme: PartitionScheme = .gpt
+    @Published var partitions: [PlannedPartition] = [PartitionPlan.defaultPartition]
+    @Published var isConfirmingPartition = false
+
+    // Tek birim bicimlendirme
+    @Published var volumeToFormat: PartitionInfo?
+    @Published var volumeFormat: VolumeFormat = .exfat
+    @Published var volumeFormatName = "DISK"
+
     // Oturum
     @Published var session: WipeSession?
     @Published var isConfirming = false
     @Published var launchError: String?
+    /// Bolumleme `diskutil`e devredildigi icin yarida kesilemez.
+    @Published private(set) var isCancellable = true
+
+    enum DetailMode: String, CaseIterable, Identifiable {
+        case wipe
+        case partition
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .wipe: return "Sil"
+            case .partition: return "Bolumle"
+            }
+        }
+
+        var systemImage: String {
+            switch self {
+            case .wipe: return "trash"
+            case .partition: return "square.split.2x1"
+            }
+        }
+    }
 
     private var tailer: ProgressTailer?
     private var runDirectory: URL?
@@ -163,46 +217,167 @@ final class AppModel: ObservableObject {
     func startWipe() {
         guard let disk = selectedDisk, disk.canWipe, !isBusy else { return }
         isConfirming = false
+
+        var session = WipeSession(
+            disk: disk,
+            kind: .wipe,
+            subtitle: method.title,
+            startedAt: Date(),
+            isDryRun: dryRun,
+            passCount: method.passCount
+        )
+        session.overallTotal = plannedBytes(for: disk)
+
+        launch(session: session, cancellable: true) { progressPath, cancelPath in
+            var arguments = [
+                "--device", disk.deviceIdentifier,
+                "--confirm", disk.deviceIdentifier,
+                "--method", self.method.rawValue,
+                "--progress", progressPath,
+                "--cancel", cancelPath,
+            ]
+            if self.verify { arguments.append("--verify") }
+            if self.dryRun { arguments.append("--dry-run") }
+            if self.reformat != .none {
+                arguments += ["--reformat", self.reformat.rawValue, "--label", self.sanitizedLabel]
+            }
+            return arguments
+        } prompt: {
+            dryRun
+                ? "WipeDisk, \(disk.deviceIdentifier) uzerinde deneme calistirmak icin yonetici yetkisi istiyor."
+                : "WipeDisk, \(disk.deviceIdentifier) (\(disk.displayName)) diskini kalici olarak silmek icin yonetici yetkisi istiyor."
+        }
+    }
+
+    // MARK: - Bolumleme
+
+    /// Duzenlenmekte olan planin secili diske uygulanmis hali.
+    func currentPlan(for disk: DiskInfo) -> PartitionPlan {
+        PartitionPlan(device: disk.deviceIdentifier, scheme: scheme, partitions: partitions)
+    }
+
+    /// Disk degistiginde plan diskin tamamini kaplayan tek bolume doner.
+    func resetPartitionPlan() {
+        scheme = .gpt
+        partitions = [PartitionPlan.defaultPartition]
+    }
+
+    func beginPartitionConfirmation() {
+        guard let disk = selectedDisk, disk.canWipe, !isBusy else { return }
+        guard currentPlan(for: disk).validate(against: disk).allSatisfy({ !$0.isBlocking }) else { return }
+        launchError = nil
+        isConfirmingPartition = true
+    }
+
+    func startPartitioning() {
+        guard let disk = selectedDisk, disk.canWipe, !isBusy else { return }
+        isConfirmingPartition = false
+
+        let plan = currentPlan(for: disk)
+        // Plan, helper'a dosya uzerinden gecer; komut satirinda tasimak icin fazla yapili.
+        guard let planData = try? JSONEncoder().encode(plan) else {
+            launchError = "Bolumleme plani kodlanamadi."
+            return
+        }
+
+        let session = WipeSession(
+            disk: disk,
+            kind: .partition,
+            subtitle: "\(scheme.rawValue) · \(partitions.count) bolum",
+            startedAt: Date(),
+            isDryRun: false,
+            passCount: 1
+        )
+
+        launch(session: session, cancellable: false, writing: ["plan.json": planData]) { progressPath, _ in
+            [
+                "--partition", (progressPath as NSString).deletingLastPathComponent + "/plan.json",
+                "--confirm", disk.deviceIdentifier,
+                "--progress", progressPath,
+            ]
+        } prompt: {
+            "WipeDisk, \(disk.deviceIdentifier) diskini yeniden bolumlemek icin yonetici yetkisi istiyor."
+        }
+    }
+
+    // MARK: - Tek birim bicimlendirme
+
+    func beginVolumeFormat(_ partition: PartitionInfo) {
+        guard !isBusy else { return }
+        launchError = nil
+        volumeFormatName = partition.volumeName ?? "DISK"
+        volumeToFormat = partition
+    }
+
+    func startVolumeFormat() {
+        guard let disk = selectedDisk, disk.canWipe, !isBusy,
+              let partition = volumeToFormat else { return }
+        volumeToFormat = nil
+
+        let format = volumeFormat
+        let name = volumeFormatName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let label = name.isEmpty ? "UNTITLED" : name
+
+        let session = WipeSession(
+            disk: disk,
+            kind: .formatVolume,
+            subtitle: "\(partition.deviceIdentifier) · \(format.shortTitle)",
+            startedAt: Date(),
+            isDryRun: false,
+            passCount: 1
+        )
+
+        launch(session: session, cancellable: false) { progressPath, _ in
+            [
+                "--erase-volume", partition.deviceIdentifier,
+                "--confirm", partition.deviceIdentifier,
+                "--format", format.rawValue == "hfsPlus" ? "hfs" : format.rawValue,
+                "--label", label,
+                "--progress", progressPath,
+            ]
+        } prompt: {
+            "WipeDisk, \(partition.deviceIdentifier) birimini bicimlendirmek icin yonetici yetkisi istiyor."
+        }
+    }
+
+    // MARK: - Ortak baslatma
+
+    /// Gecici dizini kurar, ilerleme takibini baslatir ve helper'i yonetici
+    /// yetkisiyle calistirir. Uc is turu de bu yoldan gecer.
+    private func launch(
+        session initialSession: WipeSession,
+        cancellable: Bool,
+        writing files: [String: Data] = [:],
+        arguments: (_ progressPath: String, _ cancelPath: String) -> [String],
+        prompt: () -> String
+    ) {
         launchError = nil
 
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("WipeDisk-\(UUID().uuidString)", isDirectory: true)
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            for (name, data) in files {
+                try data.write(to: directory.appendingPathComponent(name))
+            }
         } catch {
-            launchError = "Gecici dizin olusturulamadi: \(error.localizedDescription)"
+            launchError = "Gecici dizin hazirlanamadi: \(error.localizedDescription)"
             return
         }
         runDirectory = directory
+        isCancellable = cancellable
 
         let progressURL = directory.appendingPathComponent("progress.jsonl")
         let cancelURL = directory.appendingPathComponent("cancel")
         // Helper root olarak yazmadan once dosya var olmali ki takip hemen baslasin.
         FileManager.default.createFile(atPath: progressURL.path, contents: Data())
 
-        var session = WipeSession(
-            disk: disk,
-            method: method,
-            startedAt: Date(),
-            isDryRun: dryRun,
-            passCount: method.passCount
-        )
-        session.overallTotal = plannedBytes(for: disk)
+        var session = initialSession
         session.append("Yonetici yetkisi isteniyor…")
         self.session = session
 
-        var arguments = [
-            "--device", disk.deviceIdentifier,
-            "--confirm", disk.deviceIdentifier,
-            "--method", method.rawValue,
-            "--progress", progressURL.path,
-            "--cancel", cancelURL.path,
-        ]
-        if verify { arguments.append("--verify") }
-        if dryRun { arguments.append("--dry-run") }
-        if reformat != .none {
-            arguments += ["--reformat", reformat.rawValue, "--label", sanitizedLabel]
-        }
+        let argumentList = arguments(progressURL.path, cancelURL.path)
+        let promptText = prompt()
 
         let tailer = ProgressTailer(url: progressURL) { [weak self] event in
             self?.handle(event)
@@ -210,13 +385,9 @@ final class AppModel: ObservableObject {
         self.tailer = tailer
         tailer.start()
 
-        let prompt = dryRun
-            ? "WipeDisk, \(disk.deviceIdentifier) uzerinde deneme calistirmak icin yonetici yetkisi istiyor."
-            : "WipeDisk, \(disk.deviceIdentifier) (\(disk.displayName)) diskini kalici olarak silmek icin yonetici yetkisi istiyor."
-
         Task.detached(priority: .userInitiated) {
             do {
-                try PrivilegedRunner.launch(arguments: arguments, prompt: prompt)
+                try PrivilegedRunner.launch(arguments: argumentList, prompt: promptText)
             } catch {
                 await MainActor.run { self.abort(with: error.localizedDescription) }
             }
@@ -224,7 +395,7 @@ final class AppModel: ObservableObject {
     }
 
     func cancelWipe() {
-        guard let directory = runDirectory, isBusy else { return }
+        guard let directory = runDirectory, isBusy, isCancellable else { return }
         let cancelURL = directory.appendingPathComponent("cancel")
         FileManager.default.createFile(atPath: cancelURL.path, contents: Data())
         session?.append("Durdurma istegi gonderildi; su anki parca bitince duracak.")

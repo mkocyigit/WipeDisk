@@ -22,6 +22,12 @@ Yontemler:
   dod7        7 gecis, DoD 5220.22-M (ECE)
   gutmann35   35 gecis, Gutmann
 
+Bolumleme / bicimlendirme (silme yapmaz):
+  --partition <plan>    JSON bolumleme planini uygular. --confirm gerekir.
+  --erase-volume <id>   Tek bir birimi yeniden bicimlendirir (or. disk6s2).
+  --format <bicim>      --erase-volume ile: apfs | exfat | hfs | fat32
+  --label <ad>          --erase-volume ile birim adi.
+
 Secenekler:
   --confirm <diskN>     Zorunlu. --device ile birebir ayni olmali.
   --progress <yol>      Ilerleme olaylarinin JSON satirlari olarak yazilacagi dosya.
@@ -48,6 +54,9 @@ struct Arguments {
     var dryRun = false
     var list = false
     var help = false
+    var planPath: String?
+    var eraseVolume: String?
+    var volumeFormat: VolumeFormat?
 }
 
 func parseArguments(_ argv: [String]) throws -> Arguments {
@@ -87,6 +96,16 @@ func parseArguments(_ argv: [String]) throws -> Arguments {
             args.label = try value(for: flag)
         case "--dry-run":
             args.dryRun = true
+        case "--partition":
+            args.planPath = try value(for: flag)
+        case "--erase-volume":
+            args.eraseVolume = try value(for: flag)
+        case "--format":
+            let raw = try value(for: flag).lowercased()
+            guard let option = reformatAlias(raw), let format = option.volumeFormat else {
+                throw HelperError.unknownReformat(raw)
+            }
+            args.volumeFormat = format
         case "--list":
             args.list = true
         case "--help", "-h":
@@ -237,6 +256,116 @@ func main() -> Int32 {
         reporter.report(event)
         FileHandle.standardError.write(Data("Hata: \(message)\n".utf8))
         return 1
+    }
+
+    /// Bolumleme ve bicimlendirme, korumali disklere de uygulanamaz.
+    func guardWholeDisk(_ identifier: String) -> (DiskInfo?, Int32?) {
+        do {
+            let disk = try DiskEnumerator.disk(withIdentifier: identifier)
+            if let reason = disk.blockReason {
+                return (nil, fail(WipeError.diskProtected(identifier, reason).localizedDescription))
+            }
+            return (disk, nil)
+        } catch {
+            return (nil, fail(error.localizedDescription))
+        }
+    }
+
+    // --- Tek birimi yeniden bicimlendir -------------------------------------
+
+    if let rawVolume = args.eraseVolume {
+        let volume = DiskEnumerator.normalizeIdentifier(rawVolume)
+        let confirm = DiskEnumerator.normalizeIdentifier(args.confirm ?? "")
+        guard confirm == volume else {
+            return fail(HelperError.confirmationMismatch(
+                volume, confirm.isEmpty ? "(yok)" : confirm
+            ).localizedDescription)
+        }
+        guard let format = args.volumeFormat else {
+            return fail("--erase-volume icin --format zorunlu.")
+        }
+
+        // Koruma kontrolu yetki kontrolunden once yapilir: hedef zaten yasaksa
+        // parola sormanin anlami yok, ayrica bu yol koksuz de sinanabilir olur.
+        let (_, failure) = guardWholeDisk(DiskEnumerator.wholeDisk(of: volume))
+        if let failure { return failure }
+
+        guard getuid() == 0 else { return fail(HelperError.notRoot.localizedDescription) }
+
+        var started = WipeEvent(kind: .started)
+        started.device = volume
+        started.method = format.shortTitle
+        started.message = "\(volume) birimi \(format.shortTitle) olarak bicimlendiriliyor…"
+        reporter.report(started)
+
+        do {
+            try DiskFormatter.eraseVolume(volume, format: format, name: args.label) { line in
+                emit(reporter, .log, line)
+            }
+        } catch {
+            return fail(error.localizedDescription)
+        }
+
+        var finished = WipeEvent(kind: .finished)
+        finished.device = volume
+        finished.message = "\(volume) bicimlendirildi — \(format.shortTitle) · \(args.label)"
+        reporter.report(finished)
+        return 0
+    }
+
+    // --- Bolumleme plani uygula ---------------------------------------------
+
+    if let planPath = args.planPath {
+        guard let data = FileManager.default.contents(atPath: planPath) else {
+            return fail("Bolumleme plani okunamadi: \(planPath)")
+        }
+        let plan: PartitionPlan
+        do {
+            plan = try JSONDecoder().decode(PartitionPlan.self, from: data)
+        } catch {
+            return fail("Bolumleme plani cozumlenemedi: \(error.localizedDescription)")
+        }
+
+        let identifier = DiskEnumerator.normalizeIdentifier(plan.device)
+        let confirm = DiskEnumerator.normalizeIdentifier(args.confirm ?? "")
+        guard confirm == identifier else {
+            return fail(HelperError.confirmationMismatch(
+                identifier, confirm.isEmpty ? "(yok)" : confirm
+            ).localizedDescription)
+        }
+        let (maybeDisk, failure) = guardWholeDisk(identifier)
+        if let failure { return failure }
+        guard let disk = maybeDisk else { return fail("\(identifier) okunamadi.") }
+
+        // Plan diske uymuyorsa parola sormadan once reddet.
+        let blocking = plan.validate(against: disk).filter(\.isBlocking)
+        guard blocking.isEmpty else {
+            return fail(DiskFormatter.FormatError.planRejected(blocking).localizedDescription)
+        }
+
+        guard getuid() == 0 else { return fail(HelperError.notRoot.localizedDescription) }
+
+        var started = WipeEvent(kind: .started)
+        started.device = identifier
+        started.method = "\(plan.scheme.rawValue) · \(plan.partitions.count) bolum"
+        started.deviceBytes = disk.size
+        started.message = "\(identifier) bolumleniyor — \(plan.scheme.rawValue), "
+            + plan.partitions.map(\.diskutilName).joined(separator: ", ")
+        reporter.report(started)
+
+        do {
+            try DiskFormatter.apply(plan: plan, to: disk) { line in
+                emit(reporter, .log, line)
+            }
+        } catch {
+            return fail(error.localizedDescription)
+        }
+
+        var finished = WipeEvent(kind: .finished)
+        finished.device = identifier
+        finished.message = "\(plan.partitions.count) bolum olusturuldu"
+        reporter.report(finished)
+        return 0
     }
 
     // --- Dogrulamalar -------------------------------------------------------

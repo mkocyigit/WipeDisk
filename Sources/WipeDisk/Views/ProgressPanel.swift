@@ -16,10 +16,15 @@ struct ProgressPanel: View {
                     if session.errorCode == "fullDiskAccess" {
                         fullDiskAccessHelp
                     }
-                    Divider()
-                    bars
-                    Divider()
-                    stats
+                    // Bolumleme diskutil'e devredildigi icin bayt bazinda
+                    // ilerleme uretmez; bos cubuk ve sifir sayac gostermek yerine
+                    // dogrudan gunluge yer birakilir.
+                    if session.kind.isByteTracked {
+                        Divider()
+                        bars
+                        Divider()
+                        stats
+                    }
                     Divider()
                     logSection
                 }
@@ -56,14 +61,16 @@ struct ProgressPanel: View {
                     .font(.title2.weight(.semibold))
                     .fixedSize(horizontal: false, vertical: true)
 
-                Text("\(session.method.title) · \(session.disk.formattedSize) · \(session.disk.rawDeviceNode)")
+                Text("\(session.subtitle) · \(session.disk.formattedSize) · \(session.disk.deviceIdentifier)")
                     .foregroundStyle(.secondary)
 
                 HStack(spacing: 12) {
                     if session.isDryRun {
                         Badge(text: "Deneme modu", systemImage: "testtube.2")
                     }
-                    Badge(text: "\(session.passCount) gecis", systemImage: "repeat")
+                    if session.kind.isByteTracked {
+                        Badge(text: "\(session.passCount) gecis", systemImage: "repeat")
+                    }
                     Badge(text: session.startedAt.formatted(date: .omitted, time: .standard),
                           systemImage: "clock")
                 }
@@ -77,7 +84,11 @@ struct ProgressPanel: View {
     private var statusIcon: some View {
         switch session.phase {
         case .starting, .writing:
-            Image(systemName: session.isDryRun ? "testtube.2" : "trash.fill")
+            switch session.kind {
+            case .wipe: Image(systemName: session.isDryRun ? "testtube.2" : "trash.fill")
+            case .partition: Image(systemName: "square.split.2x1")
+            case .formatVolume: Image(systemName: "eraser.fill")
+            }
         case .verifying:
             Image(systemName: "checkmark.shield")
         case .finished:
@@ -295,14 +306,17 @@ struct ProgressPanel: View {
                 Spacer(minLength: 0)
 
                 if session.phase.isActive {
-                    Button(role: .destructive) {
-                        isConfirmingCancel = true
-                    } label: {
-                        Label("Durdur", systemImage: "stop.fill")
-                            .frame(minWidth: 100)
+                    // Bolumleme diskutil'e devredildigi icin yarida kesilemez.
+                    if model.isCancellable {
+                        Button(role: .destructive) {
+                            isConfirmingCancel = true
+                        } label: {
+                            Label("Durdur", systemImage: "stop.fill")
+                                .frame(minWidth: 100)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
                 } else {
                     Button {
                         model.dismissSession()

@@ -27,6 +27,34 @@ bolum tablosu dahil butun ham blok aygitini uzerine yazar.
 - **Canli ilerleme:** gecis bazinda yuzde, hiz, gecen ve kalan sure
 - **Durdurulabilir:** islem sirasinda durdurma istegi gonderilebilir
 
+## Bolumleme ve bicimlendirme
+
+Silme ekraninin yanindaki **Bolumle** sekmesi diski yeniden bolumler:
+
+- Bolum sayisi, her bolume ayri dosya sistemi, ad ve boyut
+- GPT veya MBR semasi
+- Bicimlendirilmeden birakilacak **bos alan** bolumleri
+- Planin disk uzerindeki dagilimini gosteren canli oran seridi
+- **Tek birim bicimlendirme:** bolum tablosuna dokunmadan yalnizca secili birimi
+  yeniden bicimlendirir
+
+Plan uygulanmadan once diske gore dogrulanir; engelleyici sorunlar dugmeyi kapatir,
+uyarilar (or. cok buyuk FAT32) gosterilir ama devam etmeye izin verir:
+
+| Kontrol | Davranis |
+|---|---|
+| MBR'de dortten fazla bolum | Engeller |
+| MBR uzerinde APFS | Engeller |
+| Toplam boyut diskten buyuk | Engeller |
+| "Kalan alan" son bolumde degil | Engeller |
+| Butun bolumler bos alan | Engeller |
+| FAT32 32 GB'in uzerinde | Uyarir |
+
+Bu islemler ham aygita yazmaz; `diskutil`e devredilir. `diskutil` Apple tarafindan
+imzali oldugundan **bolumleme ve bicimlendirme Tam Disk Erisimi izni istemez** —
+bu izin yalnizca silme icin gereklidir. Bolumleme `diskutil`e devredildigi icin
+yarida kesilemez, bu yuzden durdurma dugmesi gosterilmez.
+
 ## Guvenlik onlemleri
 
 Yanlis diski silmek tek tikla olacak bir sey olmamali. Bu yuzden:
@@ -84,6 +112,25 @@ sudo wipe-helper --device disk6 --confirm disk6 --method zeros --dry-run
 # Gercek silme: 7 gecis DoD, sonrasinda dogrula ve ExFAT olarak bicimlendir
 sudo wipe-helper --device disk6 --confirm disk6 --method dod7 \
                  --verify --reformat exfat --label YEDEK
+
+# Tek bir birimi yeniden bicimlendir (bolum tablosuna dokunmaz)
+sudo wipe-helper --erase-volume disk6s2 --confirm disk6s2 --format exfat --label DATA
+
+# JSON plandan bolumle
+sudo wipe-helper --partition plan.json --confirm disk6
+```
+
+Bolumleme plani `PartitionPlan` yapisinin JSON karsiligidir:
+
+```json
+{
+  "device": "disk6",
+  "scheme": "GPT",
+  "partitions": [
+    { "id": "…", "name": "BOOT", "format": "fat32", "size": { "bytes": { "_0": 1000000000 } } },
+    { "id": "…", "name": "DATA", "format": "exfat", "size": { "remainder": {} } }
+  ]
+}
 ```
 
 `--help` butun secenekleri listeler.
@@ -97,6 +144,7 @@ Sources/
 ├── WipeKit/      Disk listeleme + silme motoru — arayuz ve yardimci ortak kullanir
 │   ├── DiskEnumerator   diskutil ciktisini okur, korumali diskleri belirler
 │   ├── WipeEngine       ham aygita desen yazar, dogrular, ilerleme yayinlar
+│   ├── PartitionPlan    bolumleme plani, dogrulamasi ve diskutil katmani
 │   ├── WipeMethod       gecis desenleri
 │   └── WipeEvent        iki surec arasindaki JSON satir protokolu
 ├── wipe-helper/  root olarak calisan, asil yazma islemini yapan CLI

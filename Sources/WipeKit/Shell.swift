@@ -68,6 +68,50 @@ public enum Shell {
         return result
     }
 
+    /// Komutu calistirir ve ciktisini satir satir, is bitmeden once bildirir.
+    ///
+    /// `diskutil` gibi uzun suren komutlarin ilerlemesini canli gosterebilmek icin
+    /// gerekli. stderr, siralamanin bozulmamasi adina stdout ile ayni boruya verilir.
+    public static func runStreaming(
+        _ launchPath: String,
+        _ arguments: [String],
+        onLine: (String) -> Void
+    ) throws -> Int32 {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: launchPath)
+        process.arguments = arguments
+
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        process.standardInput = FileHandle.nullDevice
+
+        do {
+            try process.run()
+        } catch {
+            throw ShellError.launchFailed(launchPath, error)
+        }
+
+        var buffer = Data()
+        while true {
+            let chunk = pipe.fileHandleForReading.availableData
+            if chunk.isEmpty { break }
+            buffer.append(chunk)
+
+            // diskutil bazi asamalari \r ile gunceller; ikisini de satir sonu say.
+            while let index = buffer.firstIndex(where: { $0 == 0x0A || $0 == 0x0D }) {
+                onLine(String(decoding: buffer[buffer.startIndex..<index], as: UTF8.self))
+                buffer.removeSubrange(buffer.startIndex...index)
+            }
+        }
+        if !buffer.isEmpty {
+            onLine(String(decoding: buffer, as: UTF8.self))
+        }
+
+        process.waitUntilExit()
+        return process.terminationStatus
+    }
+
     /// `-plist` ureten komutlari calistirip sozluk olarak dondurur.
     public static func plist(_ launchPath: String, _ arguments: [String]) throws -> [String: Any] {
         let result = try runChecked(launchPath, arguments)
