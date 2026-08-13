@@ -1,0 +1,13 @@
+# SwiftPM
+.build/
+.swiftpm/
+Package.resolved
+
+# make-app.sh ciktisi
+build/
+
+# Ikon ara ciktisi — AppIcon.icns depoda tutuluyor, iconset her uretimde yeniden olusur.
+Resources/AppIcon.iconset/
+
+# macOS
+.DS_Store
