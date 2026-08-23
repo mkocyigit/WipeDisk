@@ -27,8 +27,10 @@ Bolumleme / bicimlendirme (silme yapmaz):
   --erase-disk <diskN>  Diskin tamamini tek birim olarak bicimlendirir.
   --erase-volume <id>   Tek bir birimi yeniden bicimlendirir (or. disk6s2).
   --scheme <sema>       --erase-disk ile: gpt | mbr   (varsayilan: gpt)
-  --format <bicim>      --erase-volume ile: apfs | exfat | hfs | fat32
-  --label <ad>          --erase-volume ile birim adi.
+  --format <bicim>      apfs | exfat | hfs | fat32 | ntfs
+                        NTFS icin paketteki mkntfs kullanilir; macOS onu
+                        salt okunur baglar.
+  --label <ad>          Birim adi.
 
 Secenekler:
   --confirm <diskN>     Zorunlu. --device ile birebir ayni olmali.
@@ -114,7 +116,7 @@ func parseArguments(_ argv: [String]) throws -> Arguments {
             args.scheme = scheme
         case "--format":
             let raw = try value(for: flag).lowercased()
-            guard let option = reformatAlias(raw), let format = option.volumeFormat else {
+            guard let format = volumeFormatAlias(raw) else {
                 throw HelperError.unknownReformat(raw)
             }
             args.volumeFormat = format
@@ -136,6 +138,20 @@ func methodAlias(_ raw: String) -> WipeMethod? {
     case "random", "rand": return .random
     case "dod", "dod7", "7", "7pass": return .dod7
     case "gutmann", "gutmann35", "35", "35pass": return .gutmann35
+    default: return nil
+    }
+}
+
+/// `--format` degerini bir birim bicimine cevirir. NTFS burada var ama
+/// `ReformatOption`da yok: o, silme sonrasi bicimlendirme icin diskutil'e
+/// dogrudan gecen daha dar bir kume.
+func volumeFormatAlias(_ raw: String) -> VolumeFormat? {
+    switch raw {
+    case "apfs": return .apfs
+    case "exfat": return .exfat
+    case "hfs", "hfs+", "jhfs+", "hfsplus": return .hfsPlus
+    case "fat32", "msdos", "fat": return .fat32
+    case "ntfs": return .ntfs
     default: return nil
     }
 }
@@ -314,6 +330,8 @@ func main() -> Int32 {
             ) { line in
                 emit(reporter, .log, line)
             }
+        } catch let error as NTFSFormatter.NTFSError {
+            return fail(error.localizedDescription, code: error.eventCode)
         } catch {
             return fail(error.localizedDescription)
         }
@@ -356,6 +374,8 @@ func main() -> Int32 {
             try DiskFormatter.eraseVolume(volume, format: format, name: args.label) { line in
                 emit(reporter, .log, line)
             }
+        } catch let error as NTFSFormatter.NTFSError {
+            return fail(error.localizedDescription, code: error.eventCode)
         } catch {
             return fail(error.localizedDescription)
         }
@@ -411,6 +431,8 @@ func main() -> Int32 {
             try DiskFormatter.apply(plan: plan, to: disk) { line in
                 emit(reporter, .log, line)
             }
+        } catch let error as NTFSFormatter.NTFSError {
+            return fail(error.localizedDescription, code: error.eventCode)
         } catch {
             return fail(error.localizedDescription)
         }

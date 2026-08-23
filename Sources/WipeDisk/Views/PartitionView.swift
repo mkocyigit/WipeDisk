@@ -160,6 +160,7 @@ struct PartitionView: View {
         case .exfat: return .teal
         case .hfsPlus: return .indigo
         case .fat32: return .orange
+        case .ntfs: return .purple
         case .freeSpace: return .gray.opacity(0.55)
         }
     }

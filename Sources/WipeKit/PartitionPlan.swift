@@ -9,6 +9,8 @@ public enum VolumeFormat: String, CaseIterable, Identifiable, Hashable, Sendable
     case exfat
     case hfsPlus
     case fat32
+    /// macOS bunu olusturamaz; `mkntfs` ile yaziliyor.
+    case ntfs
     /// Bicimlendirilmeden birakilan bos alan.
     case freeSpace
 
@@ -20,6 +22,10 @@ public enum VolumeFormat: String, CaseIterable, Identifiable, Hashable, Sendable
         case .exfat: return "ExFAT"
         case .hfsPlus: return "JHFS+"
         case .fat32: return "MS-DOS FAT32"
+        // diskutil NTFS olusturamaz. Bolum once ExFAT olarak acilir (ayni
+        // "Microsoft Basic Data" tur kimligini kullanir), sonra uzerine mkntfs
+        // ile NTFS yazilir. Bu deger yalnizca o ilk adim icindir.
+        case .ntfs: return "ExFAT"
         case .freeSpace: return "free"
         }
     }
@@ -30,6 +36,7 @@ public enum VolumeFormat: String, CaseIterable, Identifiable, Hashable, Sendable
         case .exfat: return "ExFAT — macOS + Windows"
         case .hfsPlus: return "Mac OS Genisletilmis (HFS+)"
         case .fat32: return "MS-DOS (FAT32)"
+        case .ntfs: return "NTFS — Windows (macOS salt okunur baglar)"
         case .freeSpace: return "Bos alan (bicimlendirilmez)"
         }
     }
@@ -40,6 +47,7 @@ public enum VolumeFormat: String, CaseIterable, Identifiable, Hashable, Sendable
         case .exfat: return "ExFAT"
         case .hfsPlus: return "HFS+"
         case .fat32: return "FAT32"
+        case .ntfs: return "NTFS"
         case .freeSpace: return "Bos"
         }
     }
@@ -51,6 +59,12 @@ public enum VolumeFormat: String, CaseIterable, Identifiable, Hashable, Sendable
 
     /// MBR semasi APFS tasiyamaz.
     public var supportsMBR: Bool { self != .apfs }
+
+    /// diskutil'in olusturamadigi, harici arac gerektiren bicimler.
+    public var needsExternalFormatter: Bool { self == .ntfs }
+
+    /// macOS bu bicime yazabilir mi. NTFS yerlesik surucude salt okunurdur.
+    public var isWritableByMacOS: Bool { self != .ntfs }
 
     /// FAT32'nin pratikte guvenli ust siniri.
     public var recommendedMaximum: UInt64? {
@@ -298,6 +312,48 @@ public enum DiskFormatter {
         guard blocking.isEmpty else { throw FormatError.planRejected(blocking) }
 
         try runDiskutil(plan.diskutilArguments(), onOutput: onOutput)
+
+        // NTFS istenen bolumler once ExFAT olarak olusturuldu; simdi uzerlerine
+        // NTFS yaziliyor. Olusan veri bolumleri plandaki sirayla eslesir.
+        guard plan.partitions.contains(where: { $0.format.needsExternalFormatter }) else { return }
+
+        let created = try dataPartitions(of: plan.device)
+        for (index, planned) in plan.partitions.enumerated()
+        where planned.format.needsExternalFormatter {
+            guard index < created.count else {
+                throw FormatError.commandFailed(
+                    "\(planned.diskutilName) icin olusturulan bolum bulunamadi."
+                )
+            }
+            try writeNTFS(to: created[index], label: planned.diskutilName, onOutput: onOutput)
+        }
+    }
+
+    /// Bir bolume NTFS yazar: once ayirir, mkntfs'i calistirir, sonra geri baglar.
+    private static func writeNTFS(
+        to device: String,
+        label: String,
+        onOutput: @escaping (String) -> Void
+    ) throws {
+        onOutput("\(device) uzerine NTFS yaziliyor…")
+        // mkntfs aygita dogrudan yazar; bolumun bagli olmamasi gerekir.
+        try? runDiskutil(["unmount", device]) { _ in }
+        try NTFSFormatter.format(device: device, label: label, onOutput: onOutput)
+        try? runDiskutil(["mount", device], onOutput: onOutput)
+    }
+
+    /// Diskteki veri bolumleri (EFI haric), bolum tablosundaki sirayla.
+    private static func dataPartitions(of identifier: String) throws -> [String] {
+        let listing = try Shell.plist(diskutil, ["list", "-plist", identifier])
+        let entries = listing["AllDisksAndPartitions"] as? [[String: Any]] ?? []
+
+        for entry in entries where (entry["DeviceIdentifier"] as? String) == identifier {
+            return (entry["Partitions"] as? [[String: Any]] ?? []).compactMap { raw in
+                guard let device = raw["DeviceIdentifier"] as? String else { return nil }
+                return (raw["Content"] as? String) == "EFI" ? nil : device
+            }
+        }
+        return []
     }
 
     /// Diskin tamamini tek adimda bicimlendirir: bolum tablosunu yeniden yazar
@@ -316,16 +372,23 @@ public enum DiskFormatter {
             throw FormatError.commandFailed("\(format.shortTitle), MBR semasinda kullanilamaz.")
         }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let label = trimmed.isEmpty ? "UNTITLED" : trimmed
+
         try runDiskutil(
-            [
-                "eraseDisk",
-                format.diskutilFilesystem,
-                trimmed.isEmpty ? "UNTITLED" : trimmed,
-                scheme.rawValue,
-                identifier,
-            ],
+            ["eraseDisk", format.diskutilFilesystem, label, scheme.rawValue, identifier],
             onOutput: onOutput
         )
+
+        // diskutil NTFS olusturamaz. Bolum once ExFAT olarak aciliyor; ikisi de
+        // ayni "Microsoft Basic Data" tur kimligini kullandigindan bolum tablosu
+        // dogru kaliyor ve uzerine NTFS yazmak yetiyor.
+        guard format.needsExternalFormatter else { return }
+        guard let partition = try dataPartitions(of: identifier).first else {
+            throw FormatError.commandFailed(
+                "\(identifier) uzerinde bicimlendirilecek bolum bulunamadi."
+            )
+        }
+        try writeNTFS(to: partition, label: label, onOutput: onOutput)
     }
 
     /// Bir birimi baglar. Yonetici yetkisi gerektirmez — cikarilabilir birimleri
@@ -349,10 +412,16 @@ public enum DiskFormatter {
             throw FormatError.commandFailed("Bos alan bir birime bicim olarak uygulanamaz.")
         }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let label = trimmed.isEmpty ? "UNTITLED" : trimmed
+
         try runDiskutil(
-            ["eraseVolume", format.diskutilFilesystem, trimmed.isEmpty ? "UNTITLED" : trimmed, identifier],
+            ["eraseVolume", format.diskutilFilesystem, label, identifier],
             onOutput: onOutput
         )
+
+        if format.needsExternalFormatter {
+            try writeNTFS(to: identifier, label: label, onOutput: onOutput)
+        }
     }
 
     private static func runDiskutil(_ arguments: [String], onOutput: @escaping (String) -> Void) throws {

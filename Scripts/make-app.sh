@@ -67,6 +67,22 @@ if [[ ! -f "$ROOT/Resources/AppIcon.icns" ]]; then
 fi
 cp "$ROOT/Resources/AppIcon.icns" "$RESOURCES_DIR/AppIcon.icns"
 
+# NTFS bicimlendirme araclari. macOS NTFS olusturamadigi icin mkntfs paketle
+# birlikte tasiniyor; kutuphaneyi @loader_path uzerinden yaninda buluyor.
+if [[ ! -x "$ROOT/Vendor/ntfsprogs/bin/mkntfs" ]]; then
+    echo "==> NTFS araclari derleniyor…"
+    "$ROOT/Scripts/build-ntfsprogs.sh"
+fi
+cp "$ROOT/Vendor/ntfsprogs/bin/mkntfs" "$MACOS_DIR/mkntfs"
+cp "$ROOT"/Vendor/ntfsprogs/bin/libntfs-3g.*.dylib "$MACOS_DIR/"
+chmod +x "$MACOS_DIR/mkntfs"
+
+# GPL-2.0 kosulu: ikili dagitiliyorsa lisans metni ve kaynak bilgisi yaninda olmali.
+mkdir -p "$RESOURCES_DIR/Licenses"
+cp "$ROOT/Vendor/ntfsprogs/COPYING"    "$RESOURCES_DIR/Licenses/ntfs-3g-COPYING"
+cp "$ROOT/Vendor/ntfsprogs/COPYING.LIB" "$RESOURCES_DIR/Licenses/ntfs-3g-COPYING.LIB" 2>/dev/null || true
+cp "$ROOT/Vendor/ntfsprogs/KAYNAK.txt" "$RESOURCES_DIR/Licenses/ntfs-3g-KAYNAK.txt"
+
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -94,6 +110,9 @@ PLIST
 # Ad-hoc imza: imzasiz paketler Gatekeeper tarafindan aninda oldurulebiliyor.
 # Helper once imzalanmali; paket disaridan iceriye dogru imzalanir.
 echo "==> Imzalaniyor (ad-hoc)…"
+# Ic ikililer once imzalanir; paket disaridan iceriye dogru imzalanir.
+codesign --force --sign - "$MACOS_DIR"/libntfs-3g.*.dylib
+codesign --force --sign - "$MACOS_DIR/mkntfs"
 codesign --force --sign - "$MACOS_DIR/wipe-helper"
 codesign --force --sign - "$APP"
 

@@ -79,6 +79,32 @@ struct FormatDiskView: View {
                     .frame(maxWidth: 280)
             }
 
+            // NTFS macOS'ta olusturulabiliyor ama yazilamiyor; bunu bicimlendirmeden
+            // once soylemek, sonradan "neden yazamiyorum" sorusunu onluyor.
+            if !model.diskFormat.isWritableByMacOS {
+                Label {
+                    Text("""
+                        macOS bu diski **salt okunur** baglayacak. Windows'ta tam \
+                        okuma-yazma calisir; Mac'te yazmak icin ucuncu taraf surucu gerekir.
+                        """)
+                    .fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: "info.circle.fill")
+                }
+                .font(.callout)
+                .foregroundStyle(.blue)
+            }
+
+            if model.diskFormat.needsExternalFormatter && !NTFSFormatter.isAvailable {
+                Label(
+                    "NTFS araci (mkntfs) pakette bulunamadi. Scripts/build-ntfsprogs.sh calistirilmali.",
+                    systemImage: "xmark.octagon.fill"
+                )
+                .foregroundStyle(.red)
+                .font(.callout)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+
             if schemeMismatch {
                 Label(
                     "\(model.diskFormat.shortTitle), MBR semasinda kullanilamaz.",
@@ -144,7 +170,10 @@ struct FormatDiskView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(.orange)
                 .controlSize(.large)
-                .disabled(!disk.canWipe || model.isBusy || schemeMismatch)
+                .disabled(
+                    !disk.canWipe || model.isBusy || schemeMismatch
+                        || (model.diskFormat.needsExternalFormatter && !NTFSFormatter.isAvailable)
+                )
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 14)
