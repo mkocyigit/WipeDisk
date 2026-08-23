@@ -175,3 +175,8 @@ struct ntfs_device *wd_ntfs_device_new(const char *name, const wd_ntfs_io *io)
     if (dev == NULL) { free(st); return NULL; }
     return dev;
 }
+
+void wd_ntfs_mark_dirty(ntfs_inode *ni)
+{
+    if (ni != NULL) NInoSetDirty(ni);
+}

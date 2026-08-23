@@ -22,9 +22,12 @@ final class NTFSVolume: FSVolume {
         }
     }
 
-    private let device: FSBlockDeviceResource
-    private var volume: UnsafeMutablePointer<ntfs_volume>?
-    private var ntfsDevice: UnsafeMutablePointer<ntfs_device>?
+    // Operasyonlar ayri bir dosyada; bu yuzden modul icinde gorunur.
+    let device: FSBlockDeviceResource
+    var volume: UnsafeMutablePointer<ntfs_volume>?
+    var ntfsDevice: UnsafeMutablePointer<ntfs_device>?
+    /// Kok dizin, `activate` ile acilip `deactivate` ile birakilir.
+    var rootItem: NTFSItem?
 
     init(device: FSBlockDeviceResource) throws {
         self.device = device

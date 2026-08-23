@@ -48,3 +48,6 @@ typedef struct {
 /// Verilen geri cagirmalari kullanan bir ntfs aygiti olusturur.
 /// Basarisizlikta NULL doner. Aygit `ntfs_device_free` ile birakilir.
 struct ntfs_device *wd_ntfs_device_new(const char *name, const wd_ntfs_io *io);
+
+/// `NInoSetDirty` bir makro oldugundan Swift'ten cagrilamaz.
+void wd_ntfs_mark_dirty(ntfs_inode *ni);
