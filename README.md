@@ -27,9 +27,19 @@ bolum tablosu dahil butun ham blok aygitini uzerine yazar.
 - **Canli ilerleme:** gecis bazinda yuzde, hiz, gecen ve kalan sure
 - **Durdurulabilir:** islem sirasinda durdurma istegi gonderilebilir
 
-## Bolumleme ve bicimlendirme
+## Bicimlendirme
 
-Silme ekraninin yanindaki **Bolumle** sekmesi diski yeniden bolumler:
+**Bicimlendir** sekmesi diskin tamamini tek adimda tek birim yapar: dosya sistemi,
+sema ve birim adi secilir, gerisini `diskutil eraseDisk` halleder. Gunluk kullanimda
+istenen sey genelde budur.
+
+Bicimlendirme veriyi **uzerine yazmaz** — yalnizca bolum tablosunu ve dosya sistemini
+yeniler. Veriyi kurtarilamaz kilmak icin **Sil** sekmesi gerekir. Onay penceresi
+bunu acikca soyler.
+
+## Bolumleme
+
+**Bolumle** sekmesi diski birden fazla bolume ayirir:
 
 - Bolum sayisi, her bolume ayri dosya sistemi, ad ve boyut
 - GPT veya MBR semasi
@@ -121,6 +131,9 @@ sudo wipe-helper --device disk6 --confirm disk6 --method dod7 \
 # Tek bir birimi yeniden bicimlendir (bolum tablosuna dokunmaz)
 sudo wipe-helper --erase-volume disk6s2 --confirm disk6s2 --format exfat --label DATA
 
+# Diskin tamamini bicimlendir
+sudo wipe-helper --erase-disk disk6 --confirm disk6 --format exfat --scheme gpt --label YEDEK
+
 # JSON plandan bolumle
 sudo wipe-helper --partition plan.json --confirm disk6
 ```
@@ -139,6 +152,26 @@ Bolumleme plani `PartitionPlan` yapisinin JSON karsiligidir:
 ```
 
 `--help` butun secenekleri listeler.
+
+## NTFS ve diger dosya sistemleri
+
+| Dosya sistemi | Okuma | Yazma | Bicimlendirme |
+|---|---|---|---|
+| APFS, HFS+, ExFAT, FAT32 | ✅ | ✅ | ✅ |
+| NTFS | ✅ salt okunur | ❌ | ❌ |
+| ReFS | ❌ | ❌ | ❌ |
+
+macOS, NTFS birimlerini **yerlesik olarak salt okunur baglar** — ek surucu gerekmez.
+macOS 26'da bu, cekirdek eklentisi yerine kullanici alaninda calisan bir surucudur
+(`ntfs.fs`, `FSImplementation = UserFS`). Uygulama birimin gercek dosya sistemini
+gosterir ve NTFS birimlerini **Salt okunur** rozetiyle isaretler.
+
+Bir birim bagli degilse (or. silme denemesi diski ayirdiysa) satirdaki **Bagla**
+dugmesi geri baglar. Baglama ve ayirma yonetici yetkisi istemez.
+
+NTFS'e **yazmak** ve NTFS **olusturmak** icin ucuncu taraf surucu gerekir; macOS
+NTFS bicimlendiricisi icermez (`diskutil listFilesystems` ciktisinda NTFS yoktur).
+ReFS icin macOS'ta hicbir surucu yoktur — okuma bile mumkun degildir.
 
 ## Mimari
 

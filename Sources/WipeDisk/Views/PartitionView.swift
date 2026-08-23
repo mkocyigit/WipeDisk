@@ -49,18 +49,7 @@ struct PartitionView: View {
             } else {
                 ForEach(disk.partitions) { partition in
                     HStack(spacing: 10) {
-                        Text(partition.displayName)
-                        Text(partition.deviceIdentifier)
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
-                        if partition.mountPoint != nil {
-                            Badge(text: "Bagli", systemImage: "checkmark.circle")
-                        }
-                        Spacer()
-                        Text(ByteFormatter.string(partition.size))
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
-
+                        VolumeRow(partition: partition)
                         // Bolum tablosuna dokunmadan yalnizca bu birimi bicimlendir.
                         Button("Bicimlendir") {
                             model.beginVolumeFormat(partition)
@@ -68,8 +57,14 @@ struct PartitionView: View {
                         .buttonStyle(.link)
                         .disabled(model.isBusy)
                     }
-                    .font(.callout)
                 }
+            }
+
+            if let error = model.volumeActionError {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }

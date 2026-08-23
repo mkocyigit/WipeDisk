@@ -22,7 +22,7 @@ struct ContentView: View {
                         }
                         .pickerStyle(.segmented)
                         .labelsHidden()
-                        .frame(maxWidth: 320)
+                        .frame(maxWidth: 380)
                         .padding(.horizontal, 24)
                         .padding(.vertical, 10)
 
@@ -30,6 +30,7 @@ struct ContentView: View {
 
                         switch model.detailMode {
                         case .wipe: DiskDetailView(disk: disk)
+                        case .format: FormatDiskView(disk: disk)
                         case .partition: PartitionView(disk: disk)
                         }
                     }
@@ -48,6 +49,11 @@ struct ContentView: View {
         .sheet(isPresented: $model.isConfirming) {
             if let disk = model.selectedDisk {
                 ConfirmWipeSheet(disk: disk)
+            }
+        }
+        .sheet(isPresented: $model.isConfirmingFormat) {
+            if let disk = model.selectedDisk {
+                ConfirmFormatSheet(disk: disk)
             }
         }
         .sheet(isPresented: $model.isConfirmingPartition) {

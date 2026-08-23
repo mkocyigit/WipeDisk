@@ -96,6 +96,88 @@ struct ConfirmPartitionSheet: View {
     }
 }
 
+/// Diskin tamamini bicimlendirme onayi.
+struct ConfirmFormatSheet: View {
+
+    let disk: DiskInfo
+    @EnvironmentObject private var model: AppModel
+    @State private var typed = ""
+    @FocusState private var fieldFocused: Bool
+
+    private var matches: Bool {
+        typed.trimmingCharacters(in: .whitespaces).lowercased() == disk.deviceIdentifier.lowercased()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(spacing: 14) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 36))
+                    .foregroundStyle(.orange)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Disk bicimlendirilecek")
+                        .font(.title3.weight(.semibold))
+                    Text("\(disk.deviceIdentifier) uzerindeki butun birimler silinecek.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            GroupBox {
+                VStack(alignment: .leading, spacing: 6) {
+                    ConfirmRow(label: "Disk", value: "\(disk.deviceIdentifier) — \(disk.mediaName.isEmpty ? disk.displayName : disk.mediaName)")
+                    ConfirmRow(label: "Boyut", value: disk.formattedSize)
+                    ConfirmRow(label: "Bicim", value: model.diskFormat.title)
+                    ConfirmRow(label: "Sema", value: model.diskFormatScheme.rawValue)
+                    ConfirmRow(label: "Birim adi", value: model.diskFormatName)
+
+                    if !disk.partitions.isEmpty {
+                        Divider().padding(.vertical, 2)
+                        ConfirmRow(
+                            label: "Yok edilecek birimler",
+                            value: disk.partitions.map(\.displayName).joined(separator: ", ")
+                        )
+                    }
+                }
+                .padding(4)
+            }
+
+            Label(
+                "Bicimlendirme veriyi uzerine yazmaz; eski veri kurtarma araclariyla geri getirilebilir.",
+                systemImage: "info.circle"
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Onaylamak icin **\(disk.deviceIdentifier)** yazin:")
+                    .font(.callout)
+                TextField(disk.deviceIdentifier, text: $typed)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.body.monospaced())
+                    .focused($fieldFocused)
+                    .onSubmit { if matches { model.startDiskFormat() } }
+            }
+
+            HStack {
+                Spacer()
+                Button("Vazgec", role: .cancel) { model.isConfirmingFormat = false }
+                    .keyboardShortcut(.cancelAction)
+
+                Button("Diski Bicimlendir") { model.startDiskFormat() }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.orange)
+                    .disabled(!matches)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(22)
+        .frame(width: 520)
+        .onAppear { fieldFocused = true }
+    }
+}
+
 /// Tek bir birimi, bolum tablosuna dokunmadan bicimlendirme onayi.
 struct ConfirmVolumeFormatSheet: View {
 

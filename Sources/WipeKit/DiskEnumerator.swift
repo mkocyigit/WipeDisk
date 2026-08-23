@@ -21,14 +21,17 @@ public enum DiskEnumerator {
     public static func allDisks() throws -> [DiskInfo] {
         let listing = try Shell.plist(diskutil, ["list", "-plist"])
         let wholeDisks = listing["WholeDisks"] as? [String] ?? []
-        let partitionMap = partitionsByDisk(from: listing)
         let protected = protectedWholeDisks()
+        let actionable = Set(wholeDisks).subtracting(protected)
+        let partitionMap = enrichedPartitions(from: listing, limitedTo: actionable)
+
+        // Her disk icin ayri bir `diskutil info` calistirilir; seri yapildiginda
+        // toplam sure saniyeleri buluyordu. Cagrilar birbirinden bagimsiz.
+        let infos = concurrentPlists(for: wholeDisks)
 
         var disks: [DiskInfo] = []
         for identifier in wholeDisks {
-            guard let info = try? Shell.plist(diskutil, ["info", "-plist", identifier]) else {
-                continue
-            }
+            guard let info = infos[identifier] else { continue }
             disks.append(
                 makeDisk(
                     identifier: identifier,
@@ -61,7 +64,7 @@ public enum DiskEnumerator {
         return makeDisk(
             identifier: normalized,
             info: info,
-            partitions: partitionsByDisk(from: listing)[normalized] ?? [],
+            partitions: enrichedPartitions(from: listing, limitedTo: [normalized])[normalized] ?? [],
             protectedDisks: protectedWholeDisks()
         )
     }
@@ -136,6 +139,61 @@ public enum DiskEnumerator {
         return result
     }
 
+    /// Verilen aygitlar icin `diskutil info -plist` ciktilarini eszamanli toplar.
+    private static func concurrentPlists(for identifiers: [String]) -> [String: [String: Any]] {
+        guard !identifiers.isEmpty else { return [:] }
+        var result: [String: [String: Any]] = [:]
+        let lock = NSLock()
+
+        DispatchQueue.concurrentPerform(iterations: identifiers.count) { index in
+            let identifier = identifiers[index]
+            guard let info = try? Shell.plist(diskutil, ["info", "-plist", identifier]) else { return }
+            lock.lock()
+            result[identifier] = info
+            lock.unlock()
+        }
+        return result
+    }
+
+    /// Bolum listesini dosya sistemi ve yazilabilirlik bilgisiyle tamamlar.
+    ///
+    /// `diskutil list` yalnizca bolum tablosundaki turu verir ("Microsoft Basic
+    /// Data"); bunun NTFS mi ExFAT mi oldugu ancak `diskutil info` ile anlasilir.
+    private static func enrichedPartitions(
+        from listing: [String: Any],
+        limitedTo wanted: Set<String>
+    ) -> [String: [PartitionInfo]] {
+        let base = partitionsByDisk(from: listing)
+
+        // Bolum basina bir `diskutil info` gerekiyor ve bu cagrilar
+        // diskarbitrationd uzerinde siraya giriyor. Ayrinti yalnizca kullanicinin
+        // islem yapabildigi disklerde gosterildigi icin otekiler atlanir:
+        // tazeleme suresi ~40 cagridan birkac cagriya iniyor.
+        let identifiers = base
+            .filter { wanted.contains($0.key) }
+            .values.flatMap { $0 }
+            .map(\.deviceIdentifier)
+        let details = concurrentPlists(for: identifiers)
+
+        return base.mapValues { partitions in
+            partitions.map { partition in
+                guard let info = details[partition.deviceIdentifier] else { return partition }
+                return PartitionInfo(
+                    deviceIdentifier: partition.deviceIdentifier,
+                    volumeName: partition.volumeName ?? (info["VolumeName"] as? String),
+                    content: partition.content,
+                    size: partition.size,
+                    // Baglama noktasi `info`da daha guncel; list ciktisi gecikebiliyor.
+                    mountPoint: (info["MountPoint"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+                        ?? partition.mountPoint,
+                    filesystem: (info["FilesystemName"] as? String)
+                        ?? (info["FilesystemUserVisibleName"] as? String),
+                    isWritable: (info["WritableVolume"] as? Bool) ?? true
+                )
+            }
+        }
+    }
+
     private static func partition(from raw: [String: Any]) -> PartitionInfo {
         PartitionInfo(
             deviceIdentifier: (raw["DeviceIdentifier"] as? String) ?? "?",
@@ -152,13 +210,32 @@ public enum DiskEnumerator {
     ///
     /// Acilis birimi genellikle sentezlenmis bir APFS kabinin (`disk3s1s1`)
     /// icindedir; gercek hedef o kabin fiziksel deposudur (`disk0s2` -> `disk0`).
+    private static let protectedCache = ProtectedDiskCache()
+
+    /// Sistemin uzerinde calistigi diskler surec omru boyunca degismez
+    /// (acilis birimi calisirken baska bir diske tasinmaz), bu yuzden bir kez
+    /// hesaplanip saklanir. Tazeleme dongusundeki en pahali adim buydu.
     public static func protectedWholeDisks() -> Set<String> {
+        if let cached = protectedCache.value { return cached }
+        let computed = computeProtectedWholeDisks()
+        protectedCache.value = computed
+        return computed
+    }
+
+    /// Onbellegi bosaltir — yalnizca testler ve uzun omurlu sureclerde gerekir.
+    public static func invalidateProtectedCache() {
+        protectedCache.value = nil
+    }
+
+    private static func computeProtectedWholeDisks() -> Set<String> {
         var protected: Set<String> = []
 
-        for mountPoint in criticalMountPoints {
-            guard FileManager.default.fileExists(atPath: mountPoint),
-                  let info = try? Shell.plist(diskutil, ["info", "-plist", mountPoint])
-            else { continue }
+        // Baglama noktalarinin bilgisi birbirinden bagimsiz; eszamanli topla.
+        let existing = criticalMountPoints.filter { FileManager.default.fileExists(atPath: $0) }
+        let mountInfos = concurrentPlists(for: existing)
+
+        for mountPoint in existing {
+            guard let info = mountInfos[mountPoint] else { continue }
 
             if let parent = info["ParentWholeDisk"] as? String {
                 protected.insert(parent)
@@ -250,6 +327,17 @@ public enum DiskEnumerator {
                 return "\(id) tam bir disk degil (bolum veya birim). Yalnizca tam diskler silinebilir."
             }
         }
+    }
+}
+
+/// `protectedWholeDisks()` sonucunu tasiyan kilitli kutu.
+private final class ProtectedDiskCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: Set<String>?
+
+    var value: Set<String>? {
+        get { lock.lock(); defer { lock.unlock() }; return storage }
+        set { lock.lock(); storage = newValue; lock.unlock() }
     }
 }
 

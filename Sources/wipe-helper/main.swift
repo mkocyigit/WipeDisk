@@ -24,7 +24,9 @@ Yontemler:
 
 Bolumleme / bicimlendirme (silme yapmaz):
   --partition <plan>    JSON bolumleme planini uygular. --confirm gerekir.
+  --erase-disk <diskN>  Diskin tamamini tek birim olarak bicimlendirir.
   --erase-volume <id>   Tek bir birimi yeniden bicimlendirir (or. disk6s2).
+  --scheme <sema>       --erase-disk ile: gpt | mbr   (varsayilan: gpt)
   --format <bicim>      --erase-volume ile: apfs | exfat | hfs | fat32
   --label <ad>          --erase-volume ile birim adi.
 
@@ -56,6 +58,8 @@ struct Arguments {
     var help = false
     var planPath: String?
     var eraseVolume: String?
+    var eraseDisk: String?
+    var scheme: PartitionScheme = .gpt
     var volumeFormat: VolumeFormat?
 }
 
@@ -100,6 +104,14 @@ func parseArguments(_ argv: [String]) throws -> Arguments {
             args.planPath = try value(for: flag)
         case "--erase-volume":
             args.eraseVolume = try value(for: flag)
+        case "--erase-disk":
+            args.eraseDisk = try value(for: flag)
+        case "--scheme":
+            let raw = try value(for: flag).uppercased()
+            guard let scheme = PartitionScheme(rawValue: raw) else {
+                throw HelperError.unknownReformat(raw)
+            }
+            args.scheme = scheme
         case "--format":
             let raw = try value(for: flag).lowercased()
             guard let option = reformatAlias(raw), let format = option.volumeFormat else {
@@ -269,6 +281,48 @@ func main() -> Int32 {
         } catch {
             return (nil, fail(error.localizedDescription))
         }
+    }
+
+    // --- Diskin tamamini bicimlendir ----------------------------------------
+
+    if let rawDisk = args.eraseDisk {
+        let identifier = DiskEnumerator.normalizeIdentifier(rawDisk)
+        let confirm = DiskEnumerator.normalizeIdentifier(args.confirm ?? "")
+        guard confirm == identifier else {
+            return fail(HelperError.confirmationMismatch(
+                identifier, confirm.isEmpty ? "(yok)" : confirm
+            ).localizedDescription)
+        }
+        guard let format = args.volumeFormat else {
+            return fail("--erase-disk icin --format zorunlu.")
+        }
+
+        let (_, failure) = guardWholeDisk(identifier)
+        if let failure { return failure }
+
+        guard getuid() == 0 else { return fail(HelperError.notRoot.localizedDescription) }
+
+        var started = WipeEvent(kind: .started)
+        started.device = identifier
+        started.method = "\(format.shortTitle) · \(args.scheme.rawValue)"
+        started.message = "\(identifier) \(format.shortTitle) olarak bicimlendiriliyor…"
+        reporter.report(started)
+
+        do {
+            try DiskFormatter.eraseDisk(
+                identifier, format: format, name: args.label, scheme: args.scheme
+            ) { line in
+                emit(reporter, .log, line)
+            }
+        } catch {
+            return fail(error.localizedDescription)
+        }
+
+        var finished = WipeEvent(kind: .finished)
+        finished.device = identifier
+        finished.message = "\(identifier) bicimlendirildi — \(format.shortTitle) · \(args.label)"
+        reporter.report(finished)
+        return 0
     }
 
     // --- Tek birimi yeniden bicimlendir -------------------------------------

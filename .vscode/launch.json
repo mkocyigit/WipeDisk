@@ -1,0 +1,44 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:WipeDisk}",
+            "name": "Debug wipe-helper",
+            "target": "wipe-helper",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug wipe-helper"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:WipeDisk}",
+            "name": "Release wipe-helper",
+            "target": "wipe-helper",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release wipe-helper"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:WipeDisk}",
+            "name": "Debug WipeDisk",
+            "target": "WipeDisk",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug WipeDisk"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:WipeDisk}",
+            "name": "Release WipeDisk",
+            "target": "WipeDisk",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release WipeDisk"
+        }
+    ]
+}

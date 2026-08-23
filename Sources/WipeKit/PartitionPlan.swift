@@ -44,6 +44,11 @@ public enum VolumeFormat: String, CaseIterable, Identifiable, Hashable, Sendable
         }
     }
 
+    /// `wipe-helper --format` bayraginin bekledigi takma ad.
+    public var helperArgument: String {
+        self == .hfsPlus ? "hfs" : rawValue
+    }
+
     /// MBR semasi APFS tasiyamaz.
     public var supportsMBR: Bool { self != .apfs }
 
@@ -293,6 +298,44 @@ public enum DiskFormatter {
         guard blocking.isEmpty else { throw FormatError.planRejected(blocking) }
 
         try runDiskutil(plan.diskutilArguments(), onOutput: onOutput)
+    }
+
+    /// Diskin tamamini tek adimda bicimlendirir: bolum tablosunu yeniden yazar
+    /// ve tek bir birim olusturur. `diskutil eraseDisk`in karsiligi.
+    public static func eraseDisk(
+        _ identifier: String,
+        format: VolumeFormat,
+        name: String,
+        scheme: PartitionScheme,
+        onOutput: @escaping (String) -> Void
+    ) throws {
+        guard format != .freeSpace else {
+            throw FormatError.commandFailed("Diskin tamami bos alan olarak bicimlendirilemez.")
+        }
+        guard scheme != .mbr || format.supportsMBR else {
+            throw FormatError.commandFailed("\(format.shortTitle), MBR semasinda kullanilamaz.")
+        }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        try runDiskutil(
+            [
+                "eraseDisk",
+                format.diskutilFilesystem,
+                trimmed.isEmpty ? "UNTITLED" : trimmed,
+                scheme.rawValue,
+                identifier,
+            ],
+            onOutput: onOutput
+        )
+    }
+
+    /// Bir birimi baglar. Yonetici yetkisi gerektirmez — cikarilabilir birimleri
+    /// baglamak diskarbitrationd tarafindan normal kullaniciya aciktir.
+    public static func mount(_ identifier: String, onOutput: @escaping (String) -> Void) throws {
+        try runDiskutil(["mount", identifier], onOutput: onOutput)
+    }
+
+    public static func unmount(_ identifier: String, onOutput: @escaping (String) -> Void) throws {
+        try runDiskutil(["unmount", identifier], onOutput: onOutput)
     }
 
     /// Mevcut tek bir birimi, bolum tablosuna dokunmadan yeniden bicimlendirir.

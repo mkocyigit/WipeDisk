@@ -32,23 +32,44 @@ public struct PartitionInfo: Identifiable, Hashable, Sendable, Codable {
     public let content: String?
     public let size: UInt64
     public let mountPoint: String?
+    /// Birimdeki dosya sistemi — "NTFS", "ExFAT", "APFS". Bolum tablosundaki
+    /// tur adindan farklidir: "Microsoft Basic Data" NTFS de ExFAT de olabilir.
+    public let filesystem: String?
+    /// macOS bu birime yazabiliyor mu. NTFS'te yerlesik surucu salt okunurdur.
+    public let isWritable: Bool
 
     public init(
         deviceIdentifier: String,
         volumeName: String?,
         content: String?,
         size: UInt64,
-        mountPoint: String?
+        mountPoint: String?,
+        filesystem: String? = nil,
+        isWritable: Bool = true
     ) {
         self.deviceIdentifier = deviceIdentifier
         self.volumeName = volumeName
         self.content = content
         self.size = size
         self.mountPoint = mountPoint
+        self.filesystem = filesystem
+        self.isWritable = isWritable
     }
 
     public var displayName: String {
         volumeName ?? content ?? deviceIdentifier
+    }
+
+    public var isMounted: Bool { mountPoint != nil }
+
+    /// Taninmis bir dosya sistemi var ama macOS yazamiyor — tipik olarak NTFS.
+    public var isReadOnlyFilesystem: Bool {
+        filesystem != nil && !isWritable
+    }
+
+    /// Listede gosterilecek dosya sistemi etiketi.
+    public var filesystemLabel: String {
+        filesystem ?? content ?? "Bilinmiyor"
     }
 }
 

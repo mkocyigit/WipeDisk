@@ -120,6 +120,16 @@ final class AppModel: ObservableObject {
     @Published var partitions: [PlannedPartition] = [PartitionPlan.defaultPartition]
     @Published var isConfirmingPartition = false
 
+    // Diskin tamamini bicimlendirme
+    @Published var diskFormat: VolumeFormat = .exfat
+    @Published var diskFormatName = "DISK"
+    @Published var diskFormatScheme: PartitionScheme = .gpt
+    @Published var isConfirmingFormat = false
+
+    // Baglama eylemleri (yonetici yetkisi gerektirmez)
+    @Published var volumeActionError: String?
+    @Published private(set) var busyVolumeID: String?
+
     // Tek birim bicimlendirme
     @Published var volumeToFormat: PartitionInfo?
     @Published var volumeFormat: VolumeFormat = .exfat
@@ -134,6 +144,7 @@ final class AppModel: ObservableObject {
 
     enum DetailMode: String, CaseIterable, Identifiable {
         case wipe
+        case format
         case partition
 
         var id: String { rawValue }
@@ -141,6 +152,7 @@ final class AppModel: ObservableObject {
         var title: String {
             switch self {
             case .wipe: return "Sil"
+            case .format: return "Bicimlendir"
             case .partition: return "Bolumle"
             }
         }
@@ -148,6 +160,7 @@ final class AppModel: ObservableObject {
         var systemImage: String {
             switch self {
             case .wipe: return "trash"
+            case .format: return "eraser"
             case .partition: return "square.split.2x1"
             }
         }
@@ -257,6 +270,74 @@ final class AppModel: ObservableObject {
         }
     }
 
+    // MARK: - Diskin tamamini bicimlendirme
+
+    func beginFormatConfirmation() {
+        guard let disk = selectedDisk, disk.canWipe, !isBusy else { return }
+        launchError = nil
+        isConfirmingFormat = true
+    }
+
+    func startDiskFormat() {
+        guard let disk = selectedDisk, disk.canWipe, !isBusy else { return }
+        isConfirmingFormat = false
+
+        let format = diskFormat
+        let scheme = diskFormatScheme
+        let name = diskFormatName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let label = name.isEmpty ? "UNTITLED" : name
+
+        let session = WipeSession(
+            disk: disk,
+            kind: .formatVolume,
+            subtitle: "\(format.shortTitle) · \(scheme.rawValue)",
+            startedAt: Date(),
+            isDryRun: false,
+            passCount: 1
+        )
+
+        launch(session: session, cancellable: false) { progressPath, _ in
+            [
+                "--erase-disk", disk.deviceIdentifier,
+                "--confirm", disk.deviceIdentifier,
+                "--format", format.helperArgument,
+                "--scheme", scheme.rawValue,
+                "--label", label,
+                "--progress", progressPath,
+            ]
+        } prompt: {
+            "WipeDisk, \(disk.deviceIdentifier) diskini \(format.shortTitle) olarak bicimlendirmek icin yonetici yetkisi istiyor."
+        }
+    }
+
+    // MARK: - Baglama / ayirma
+
+    /// Birim baglama yonetici yetkisi istemez; dogrudan diskutil cagrilir.
+    /// NTFS birimleri macOS tarafindan salt okunur baglanir.
+    func setMounted(_ partition: PartitionInfo, mounted: Bool) {
+        guard busyVolumeID == nil else { return }
+        busyVolumeID = partition.deviceIdentifier
+        volumeActionError = nil
+
+        let identifier = partition.deviceIdentifier
+        Task.detached(priority: .userInitiated) {
+            let result = Result {
+                if mounted {
+                    try DiskFormatter.mount(identifier) { _ in }
+                } else {
+                    try DiskFormatter.unmount(identifier) { _ in }
+                }
+            }
+            await MainActor.run {
+                self.busyVolumeID = nil
+                if case .failure(let error) = result {
+                    self.volumeActionError = error.localizedDescription
+                }
+                self.refresh()
+            }
+        }
+    }
+
     // MARK: - Bolumleme
 
     /// Duzenlenmekte olan planin secili diske uygulanmis hali.
@@ -339,7 +420,7 @@ final class AppModel: ObservableObject {
             [
                 "--erase-volume", partition.deviceIdentifier,
                 "--confirm", partition.deviceIdentifier,
-                "--format", format.rawValue == "hfsPlus" ? "hfs" : format.rawValue,
+                "--format", format.helperArgument,
                 "--label", label,
                 "--progress", progressPath,
             ]
