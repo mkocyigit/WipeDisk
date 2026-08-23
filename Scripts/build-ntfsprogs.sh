@@ -92,6 +92,16 @@ DYLIB="$(find "$SRC/libntfs-3g/.libs" -name "libntfs-3g.*.dylib" -type f | head 
 cp "$SRC/ntfsprogs/.libs/mkntfs" "$VENDOR/bin/mkntfs"
 cp "$DYLIB" "$VENDOR/bin/$(basename "$DYLIB")"
 
+# FSKit modulu libntfs-3g'ye dogrudan baglanacak: basliklar ve statik kutuphane.
+# Uzanti icinde statik baglamak, paket ici dylib yolu derdini tamamen kaldiriyor.
+mkdir -p "$VENDOR/include/ntfs-3g" "$VENDOR/lib"
+cp "$SRC"/include/ntfs-3g/*.h "$VENDOR/include/ntfs-3g/"
+# config.h ureti sirasinda olusuyor ve basliklar onu bekliyor.
+cp "$SRC/config.h" "$VENDOR/include/config.h"
+if [[ -f "$SRC/libntfs-3g/.libs/libntfs-3g.a" ]]; then
+    cp "$SRC/libntfs-3g/.libs/libntfs-3g.a" "$VENDOR/lib/libntfs-3g.a"
+fi
+
 # Kutuphane yolu derleme dizinine mutlak olarak gomulu geliyor; uygulama
 # paketinin icinde de calisabilmesi icin ikilinin yanini gosterecek sekilde
 # yeniden yaziliyor.
