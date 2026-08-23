@@ -11,3 +11,6 @@ Resources/AppIcon.iconset/
 
 # macOS
 .DS_Store
+
+# Editor yapilandirmasi
+.vscode/
