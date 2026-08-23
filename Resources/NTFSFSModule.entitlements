@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- FSKit dosya sistemi modulu yetkisi.
+         Apple'in kendi exfat modulu de bunu kullaniyor, yani ucuncu taraflara
+         acik bir yetki. Sistemin kabul etmesi icin ucretli bir gelistirici
+         hesabina bagli provisioning profile ile imzalanmasi gerekir;
+         ad-hoc imza bu yetkiyi tasiyamaz. -->
+    <key>com.apple.developer.fskit.fsmodule</key>
+    <true/>
+
+    <!-- FSKit modulleri sandbox icinde calisir. Aygita erisim FSKit'in
+         verdigi FSBlockDeviceResource uzerinden oldugu icin ek dosya
+         erisim yetkisi gerekmiyor. -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+</dict>
+</plist>

@@ -107,6 +107,79 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
+# --- NTFS yazma modulu (FSKit uzantisi) -------------------------------------
+#
+# ExtensionKit uzantilari uygulama paketinin Contents/Extensions/ dizininde
+# durur. Modulun yuklenebilmesi com.apple.developer.fskit.fsmodule yetkisine
+# baglidir; bu yetki yalnizca ucretli bir gelistirici hesabina bagli
+# provisioning profile ile gecerlidir. SIGN_IDENTITY verilmezse paket yine
+# uretilir ama sistem yuklemez.
+if [[ -x "$BIN_DIR/NTFSFSModule" ]]; then
+    APPEX="$APP/Contents/Extensions/NTFSFSModule.appex"
+    echo "==> NTFS modulu paketleniyor…"
+    mkdir -p "$APPEX/Contents/MacOS"
+    cp "$BIN_DIR/NTFSFSModule" "$APPEX/Contents/MacOS/NTFSFSModule"
+
+    cat > "$APPEX/Contents/Info.plist" <<'APPEXPLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>               <string>NTFSFSModule</string>
+    <key>CFBundleDisplayName</key>        <string>NTFS</string>
+    <key>CFBundleIdentifier</key>         <string>com.wipedisk.app.ntfs</string>
+    <key>CFBundleExecutable</key>         <string>NTFSFSModule</string>
+    <!-- Uzantilar XPC paketi olarak isaretlenir; Apple'in FSKit modulleri de boyle. -->
+    <key>CFBundlePackageType</key>        <string>XPC!</string>
+    <key>CFBundleShortVersionString</key> <string>1.0</string>
+    <key>CFBundleVersion</key>            <string>1</string>
+    <key>LSMinimumSystemVersion</key>     <string>15.4</string>
+    <key>EXAppExtensionAttributes</key>
+    <dict>
+        <key>EXExtensionPointIdentifier</key> <string>com.apple.fskit.fsmodule</string>
+        <key>EXExtensionPrincipalClass</key>  <string>NTFSFileSystem</string>
+        <!-- Hangi ortamlarda taninma denenecegi. Tanima isini modulun
+             probeResource'u yapiyor, ayri bir probe ikilisi yok. -->
+        <key>FSMediaTypes</key>
+        <dict>
+            <key>EBD0A0A2-B9E5-4433-87C0-68B6B72699C7</key>
+            <dict>
+                <key>FSMediaProperties</key>
+                <dict>
+                    <key>Content Hint</key> <string>EBD0A0A2-B9E5-4433-87C0-68B6B72699C7</string>
+                    <key>Leaf</key>         <true/>
+                </dict>
+                <key>FSProbeOrder</key>     <integer>1000</integer>
+            </dict>
+            <key>Windows_NTFS</key>
+            <dict>
+                <key>FSMediaProperties</key>
+                <dict>
+                    <key>Content Hint</key> <string>Windows_NTFS</string>
+                    <key>Leaf</key>         <true/>
+                </dict>
+                <key>FSProbeOrder</key>     <integer>1000</integer>
+            </dict>
+        </dict>
+    </dict>
+</dict>
+</plist>
+APPEXPLIST
+
+    # Uzanti kendi yetkileriyle, paketten once imzalanir.
+    if [[ -n "${SIGN_IDENTITY:-}" ]]; then
+        codesign --force --timestamp --options runtime \
+                 --entitlements "$ROOT/Resources/NTFSFSModule.entitlements" \
+                 --sign "$SIGN_IDENTITY" "$APPEX"
+        echo "    Modul imzalandi: $SIGN_IDENTITY"
+    else
+        codesign --force --entitlements "$ROOT/Resources/NTFSFSModule.entitlements" \
+                 --sign - "$APPEX"
+        echo "    UYARI: ad-hoc imza — sistem bu modulu YUKLEMEZ."
+        echo "    Gercek kurulum icin: SIGN_IDENTITY=\"Developer ID Application: …\" Scripts/make-app.sh"
+    fi
+fi
+
 # Ad-hoc imza: imzasiz paketler Gatekeeper tarafindan aninda oldurulebiliyor.
 # Helper once imzalanmali; paket disaridan iceriye dogru imzalanir.
 echo "==> Imzalaniyor (ad-hoc)…"

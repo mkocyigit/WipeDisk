@@ -173,6 +173,46 @@ NTFS'e **yazmak** ve NTFS **olusturmak** icin ucuncu taraf surucu gerekir; macOS
 NTFS bicimlendiricisi icermez (`diskutil listFilesystems` ciktisinda NTFS yoktur).
 ReFS icin macOS'ta hicbir surucu yoktur — okuma bile mumkun degildir.
 
+## NTFS yazma (FSKit modulu) — gelistirme asamasinda
+
+`Sources/NTFSFSModule/`, macOS'un salt okunur NTFS'ini asmak icin bir FSKit
+dosya sistemi modulu. Yaklasim, NTFS'i sifirdan yazmak degil: okuma-yazma
+destegi olgun olan **libntfs-3g**'yi FSKit'in cagri yuzeyine baglamak.
+
+Onemli tasarim karari: sandbox'li bir uzanti `/dev/diskNsM`'i dogrudan acamaz.
+libntfs-3g'nin takilabilir `ntfs_device_operations` katmani kullanilarak
+kutuphanenin butun G/C'si FSKit'in `FSBlockDeviceResource`'una yonlendiriliyor;
+boylece aygit acma yetkisi hic gerekmiyor.
+
+Uygulanan protokoller (20 metot):
+
+| Protokol | Kapsam |
+|---|---|
+| `FSVolume.Operations` | baglama, oznitelikler, arama, dizin listeleme, olusturma, silme, yeniden adlandirma, sabit bag |
+| `FSVolume.ReadWriteOperations` | `$DATA` ozniteligi uzerinden okuma ve yazma |
+| `FSVolume.OpenCloseOperations` | yazma kipi denetimi, kapanista senkronizasyon |
+
+### Calistirmak icin gereken
+
+Modul `com.apple.developer.fskit.fsmodule` yetkisi olmadan **yuklenmez**. Bu,
+Apple'in kendi exfat modulunun de kullandigi, ucuncu taraflara acik bir yetki;
+ama gecerli olmasi icin ucretli bir gelistirici hesabina bagli provisioning
+profile ile imzalanmasi gerekir. Ad-hoc imza bu yetkiyi tasiyamaz.
+
+```sh
+SIGN_IDENTITY="Developer ID Application: Adiniz (TEAMID)" Scripts/make-app.sh --install
+```
+
+Olculen durum: ad-hoc imzayla paket sisteme **kaydoluyor** (`pluginkit -m -p
+com.apple.fskit.fsmodule` ciktisinda Apple'in modulleriyle yan yana gorunuyor),
+fakat bir NTFS birimi baglandiginda macOS yine kendi salt okunur surucusunu
+kullaniyor ve modulumuze hic basvurmuyor.
+
+> [!WARNING]
+> Bu modulun hicbir yolu henuz calistirilmadi — yalnizca derleniyor. Yetki
+> alindiktan sonra her metot once **atilabilir bir disk imaji** uzerinde
+> sinanmali. Test edilmemis bir NTFS yazicisi veriyi sessizce bozar.
+
 ## Mimari
 
 ```
