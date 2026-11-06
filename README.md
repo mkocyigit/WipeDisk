@@ -248,11 +248,13 @@ swift Scripts/make-icon.swift Resources
 
 ## Lisans
 
-WipeDisk, **GNU General Public License v2.0 veya sonrasi** (GPL-2.0-or-later)
-altinda dagitilir — bkz. [LICENSE](LICENSE).
+WipeDisk'in kaynak kodu **MIT lisansi** altindadir — bkz. [LICENSE](LICENSE).
+Kodu ozgurce kullanabilir, degistirebilir ve dagitabilirsiniz.
 
-Proje, yine GPL-2.0-or-later lisansli [ntfs-3g](https://github.com/tuxera/ntfs-3g)
-projesinin `mkntfs` aracini ve `libntfs-3g` kutuphanesini kullanir. Bu ikililer
-depoda tutulmaz; `Scripts/build-ntfsprogs.sh` ile kaynaktan derlenir. Uygulama
-paketi, ntfs-3g lisans metinlerini ve kaynak bilgisini
-`Contents/Resources/Licenses/` altinda tasir.
+**Istisna — ntfs-3g:** NTFS ozellikleri, GPL-2.0-or-later lisansli
+[ntfs-3g](https://github.com/tuxera/ntfs-3g) projesinin `mkntfs` aracini ve
+`libntfs-3g` kutuphanesini kullanir. Bu ikililer depoda tutulmaz;
+`Scripts/build-ntfsprogs.sh` ile kaynaktan derlenir. libntfs-3g'ye baglanan
+**NTFS FSKit modulu derlenip dagitildiginda, o ikili GPL kosullarina tabidir**
+(MIT, GPL ile uyumlu oldugundan bu mumkundur). Uygulama paketi ntfs-3g lisans
+metinlerini `Contents/Resources/Licenses/` altinda tasir.
