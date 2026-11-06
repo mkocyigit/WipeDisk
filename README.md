@@ -14,6 +14,10 @@ macOS icin ham disk silme araci — SwiftUI arayuz, ayricalikli yardimci islem, 
 > **Bu arac verileri kalici olarak yok eder.** Uzerine yazilan bir disk kurtarilamaz.
 > Diski silmeden once mutlaka **Deneme modu** ile calistirin ve aygit tanimlayicisini
 > (`diskN`) iki kez kontrol edin.
+>
+> Yazilim **"OLDUGU GIBI"**, hicbir garanti olmadan sunulur. Kullanimindan dogan
+> **her turlu veri kaybi ve zarardan kullanici sorumludur** — bkz.
+> [Sorumluluk reddi](#sorumluluk-reddi).
 
 ## Ne yapar
 
@@ -246,10 +250,39 @@ gorsel varlik kullanilmaz, dolayisiyla telif kisiti yoktur.
 swift Scripts/make-icon.swift Resources
 ```
 
+## Sorumluluk reddi
+
+Bu yazilimi kullanarak asagidaki kosullari kabul etmis olursunuz:
+
+1. **Garanti yoktur.** Yazilim "OLDUGU GIBI" sunulur; calisacagina, hatasiz
+   olacagina, belirli bir amaca uygun olacagina veya verileri guvenli bicimde
+   silecegine dair acik ya da ortulu hicbir garanti verilmez.
+2. **Sorumluluk tamamen kullanicidadir.** Yazilimin kullanimi, yanlis kullanimi
+   veya kullanilamamasi sonucu olusan veri kaybi, donanim hasari, is kaybi ya da
+   dogrudan veya dolayli herhangi bir zarardan yazarlar ve katkida bulunanlar
+   **hicbir kosulda sorumlu tutulamaz.**
+3. **Silme geri alinamaz.** Silme, bicimlendirme ve bolumleme islemleri verileri
+   kalici olarak yok edebilir. Dogru diski secmek, yedek almak ve islemi onaylamak
+   kullanicinin sorumlulugundadir.
+4. **Guvenli silme garantisi verilmez.** SSD'lerde asinma dengeleme (wear leveling),
+   ayrilmis alanlar ve denetleyici davranisi nedeniyle uzerine yazma, verilerin
+   adli yontemlerle kurtarilamayacagini garanti etmez. Yasal veya kurumsal imha
+   gereksinimleri icin sertifikali yontemler kullanin.
+5. **Deneysel bilesenler.** NTFS FSKit modulu test edilmemistir ve verileri
+   bozabilir; yalnizca atilabilir disklerde denenmelidir.
+6. **Ucuncu taraf yazilim.** ntfs-3g gibi ucuncu taraf bilesenler kendi
+   lisanslarina tabidir ve onlarin davranisi icin de sorumluluk kabul edilmez.
+
+Bu kosullar, [LICENSE](LICENSE) dosyasindaki MIT lisansinin garanti ve
+sorumluluk reddi hukumlerini tamamlar; celiski halinde lisans metni gecerlidir.
+
 ## Lisans
 
 WipeDisk'in kaynak kodu **MIT lisansi** altindadir — bkz. [LICENSE](LICENSE).
-Kodu ozgurce kullanabilir, degistirebilir ve dagitabilirsiniz.
+Kodu ticari amacla dahil ozgurce kullanabilir, degistirebilir ve
+dagitabilirsiniz. Tek sart: **telif bildirimi ve lisans metni, kodun tum
+kopyalarinda korunmalidir.** Yazilim garantisiz sunulur ve yazarlar hicbir
+zarardan sorumlu degildir.
 
 **Istisna — ntfs-3g:** NTFS ozellikleri, GPL-2.0-or-later lisansli
 [ntfs-3g](https://github.com/tuxera/ntfs-3g) projesinin `mkntfs` aracini ve
