@@ -117,7 +117,7 @@ cat > "$VENDOR/KAYNAK.txt" <<EOF
 ntfs-3g / ntfsprogs $VERSION
 Kaynak: $URL
 SHA-256: $EXPECTED_SHA
-Lisans: GPL-2.0-or-later (mkntfs), LGPL-2.0-or-later (libntfs-3g)
+Lisans: GPL-2.0-or-later (mkntfs), GPL-2.0-or-later (libntfs-3g)
 
 Bu ikililer degistirilmeden, yukaridaki kaynaktan derlenmistir.
 Derleme secenekleri: --disable-ntfs-3g --disable-mount-helper --without-uuid

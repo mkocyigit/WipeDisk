@@ -23,7 +23,7 @@ bolum tablosu dahil butun ham blok aygitini uzerine yazar.
 - **Silme yontemleri:** tek gecis sifir, tek gecis rastgele, DoD 5220.22-M (7 gecis), Gutmann (35 gecis)
 - **Dogrulama:** son gecisten sonra disk geri okunup yazilanla karsilastirilir
 - **Deneme modu:** butun akis calisir, diske tek bayt gitmez
-- **Silme sonrasi bicimlendirme:** ExFAT, APFS, HFS+, FAT32
+- **Silme sonrasi bicimlendirme:** ExFAT, APFS, HFS+, FAT32, NTFS
 - **Canli ilerleme:** gecis bazinda yuzde, hiz, gecen ve kalan sure
 - **Durdurulabilir:** islem sirasinda durdurma istegi gonderilebilir
 
@@ -85,7 +85,7 @@ Yanlis diski silmek tek tikla olacak bir sey olmamali. Bu yuzden:
 macOS 14+ ve Xcode komut satiri araclari gerekir.
 
 ```sh
-git clone https://github.com/KULLANICI/WipeDisk.git
+git clone https://github.com/mkocyigit/WipeDisk.git
 cd WipeDisk
 Scripts/make-app.sh --install   # derler ve /Applications altina kurar
 open /Applications/WipeDisk.app
@@ -158,7 +158,7 @@ Bolumleme plani `PartitionPlan` yapisinin JSON karsiligidir:
 | Dosya sistemi | Okuma | Yazma | Bicimlendirme |
 |---|---|---|---|
 | APFS, HFS+, ExFAT, FAT32 | ✅ | ✅ | ✅ |
-| NTFS | ✅ salt okunur | ❌ | ❌ |
+| NTFS | ✅ salt okunur | ❌ (FSKit modulu gelistiriliyor) | ✅ `mkntfs` ile |
 | ReFS | ❌ | ❌ | ❌ |
 
 macOS, NTFS birimlerini **yerlesik olarak salt okunur baglar** — ek surucu gerekmez.
@@ -169,8 +169,11 @@ gosterir ve NTFS birimlerini **Salt okunur** rozetiyle isaretler.
 Bir birim bagli degilse (or. silme denemesi diski ayirdiysa) satirdaki **Bagla**
 dugmesi geri baglar. Baglama ve ayirma yonetici yetkisi istemez.
 
-NTFS'e **yazmak** ve NTFS **olusturmak** icin ucuncu taraf surucu gerekir; macOS
-NTFS bicimlendiricisi icermez (`diskutil listFilesystems` ciktisinda NTFS yoktur).
+macOS NTFS bicimlendiricisi icermez (`diskutil listFilesystems` ciktisinda NTFS
+yoktur). Bu bosluk ntfs-3g projesinin `mkntfs` araciyla kapatilir:
+`Scripts/build-ntfsprogs.sh` araci kaynaktan derler (SHA-256 dogrulamasiyla),
+`Scripts/make-app.sh` uygulama paketine koyar. NTFS'e **yazmak** icin asagidaki
+FSKit modulu gerekir.
 ReFS icin macOS'ta hicbir surucu yoktur — okuma bile mumkun degildir.
 
 ## NTFS yazma (FSKit modulu) — gelistirme asamasinda
@@ -242,3 +245,14 @@ gorsel varlik kullanilmaz, dolayisiyla telif kisiti yoktur.
 ```sh
 swift Scripts/make-icon.swift Resources
 ```
+
+## Lisans
+
+WipeDisk, **GNU General Public License v2.0 veya sonrasi** (GPL-2.0-or-later)
+altinda dagitilir — bkz. [LICENSE](LICENSE).
+
+Proje, yine GPL-2.0-or-later lisansli [ntfs-3g](https://github.com/tuxera/ntfs-3g)
+projesinin `mkntfs` aracini ve `libntfs-3g` kutuphanesini kullanir. Bu ikililer
+depoda tutulmaz; `Scripts/build-ntfsprogs.sh` ile kaynaktan derlenir. Uygulama
+paketi, ntfs-3g lisans metinlerini ve kaynak bilgisini
+`Contents/Resources/Licenses/` altinda tasir.

@@ -111,6 +111,31 @@ public final class WipeEngine {
         public let passCount: Int
     }
 
+    // MARK: - On kontrol
+
+    /// Ham aygita erisilebildigini, diskteki birimler ayrilmadan once dogrular.
+    ///
+    /// TCC hem okumayi hem yazmayi `EPERM` ile reddeder; `EBUSY` ise yalnizca
+    /// yazma denemesinde cikar. Bu yuzden salt okunur bir acma denemesi izin
+    /// sorununu kesin ayirt eder ve bagli bir diskte bile guvenle yapilabilir.
+    ///
+    /// Onemli: bu kontrol ayirmadan once calisir. Aksi halde izin yoksa disk
+    /// once ayrilir, sonra islem basarisiz olur ve kullanicinin birimleri
+    /// ortada kalir.
+    public static func preflight(disk: DiskInfo) throws {
+        let path = disk.rawDeviceNode
+        let fd = open(path, O_RDONLY)
+        if fd >= 0 {
+            close(fd)
+            return
+        }
+        // Yalnizca izin reddi burada olumcul; diger hatalar asil acma
+        // sirasinda daha iyi baglamla bildirilecek.
+        if errno == EPERM, getuid() == 0 {
+            throw WipeError.needsFullDiskAccess(path)
+        }
+    }
+
     // MARK: - Ana akis
 
     @discardableResult

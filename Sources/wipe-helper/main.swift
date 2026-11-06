@@ -478,6 +478,19 @@ func main() -> Int32 {
         return 130
     }
 
+    // --- Erisim on kontrolu -------------------------------------------------
+    //
+    // Ayirmadan ONCE yapilir. Aksi halde izin yoksa disk once ayrilir, sonra
+    // islem basarisiz olur ve kullanicinin birimleri bagli olmadan ortada kalir.
+
+    do {
+        try WipeEngine.preflight(disk: disk)
+    } catch let error as WipeError {
+        return fail(error.localizedDescription, code: error.eventCode)
+    } catch {
+        return fail(error.localizedDescription)
+    }
+
     // --- Baglantiyi kes -----------------------------------------------------
 
     if !args.dryRun {
