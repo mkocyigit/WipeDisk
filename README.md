@@ -243,8 +243,12 @@ paylaşılan bir dosya üzerinden JSON satırlarıyla haberleşir. Durdurma iste
 
 ## İkon
 
+> [!NOTE]
+> Uygulama simgesi **yapay zekâ ile üretilmiştir.** Simgeyi çizen
+> `Scripts/make-icon.swift` betiği yapay zekâ yardımıyla yazılmıştır.
+
 `Scripts/make-icon.swift` ikonu tamamen Core Graphics ile çizer — dışarıdan hiçbir
-görsel varlık kullanılmaz, dolayısıyla telif kısıtı yoktur.
+görsel varlık, yazı tipi veya üçüncü taraf görsel kullanılmaz.
 
 ```sh
 swift Scripts/make-icon.swift Resources
